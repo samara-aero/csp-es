@@ -10,6 +10,7 @@ if(CHECK_FOUND)
     hmac.c
     routing_enable_disable.c
     csp_version.c
+    rdp_queue.c
   )
 
   # Register with CTest so `ctest` can discover and run the binary.

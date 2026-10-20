@@ -54,8 +54,8 @@ static csp_packet_t * csp_rdp_queue_get(csp_queue_handle_t queue, csp_conn_t * c
             return packet;
         }
 
-        /* Put it back and check next */
-        csp_rdp_queue_add(queue, conn, packet);
+        /* Put it back, keeping its owner, and check next */
+        csp_rdp_queue_add(queue, packet->conn, packet);
     }
 
     return NULL;
