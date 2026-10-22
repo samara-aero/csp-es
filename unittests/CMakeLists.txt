@@ -11,6 +11,7 @@ if(CHECK_FOUND)
     routing_enable_disable.c
     csp_version.c
     rdp_queue.c
+    can_tx.c
   )
 
   # Register with CTest so `ctest` can discover and run the binary.
