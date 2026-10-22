@@ -9,11 +9,14 @@ START_TEST(test_alloc_clean_734)
 	csp_init();
 
     /* use all buffer and free them */
+    static const char previous[] = "previous_data!!";
     for (unsigned int i = 0; i < CSP_BUFFER_COUNT; i++) {
         csp_packet_t * packet = csp_buffer_get_always();
+        /* 1..sizeof(previous) bytes, cycling: never past the string, whatever CSP_BUFFER_COUNT is */
+        unsigned int length = (i % sizeof(previous)) + 1;
         memset(packet->data, 0, sizeof(packet->data)); /* clear buffer data */
-        memcpy(packet->data, "previous_data!!", i+1);  /* put some data inside */
-		packet->length = i + 1;
+        memcpy(packet->data, previous, length);        /* put some data inside */
+		packet->length = length;
         csp_buffer_free(packet);
     }
 
