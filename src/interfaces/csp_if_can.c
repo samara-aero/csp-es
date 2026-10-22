@@ -10,6 +10,7 @@
 #include <csp/csp_id.h>
 
 #include "csp_if_can_pbuf.h"
+#include "../csp_semaphore.h"
 
 /**
  * TESTING:
@@ -42,6 +43,10 @@ enum cfp_frame_t {
 	/* Remaining CFP fragment(s) of a CSP packet */
 	CFP_MORE = 1
 };
+
+/* Held while one packet's frames are sent. Prevents packet interleaving from concurrent
+ * senders. Shared by all CAN interfaces. */
+static csp_bin_sem_t tx_lock;
 
 static int csp_can1_rx(csp_iface_t * iface, uint32_t id, const uint8_t * data, uint8_t dlc, int * task_woken) {
 
@@ -159,7 +164,7 @@ static int csp_can1_rx(csp_iface_t * iface, uint32_t id, const uint8_t * data, u
 	return CSP_ERR_NONE;
 }
 
-static int csp_can1_tx(csp_iface_t * iface, uint16_t via, csp_packet_t * packet, int from_me) {
+static int csp_can1_tx_frames(csp_iface_t * iface, uint16_t via, csp_packet_t * packet, int from_me) {
 	(void)from_me; /* Avoid compiler warnings about unused parameter */
 
 	/* Loopback */
@@ -170,7 +175,7 @@ static int csp_can1_tx(csp_iface_t * iface, uint16_t via, csp_packet_t * packet,
 
 	csp_can_interface_data_t * ifdata = iface->interface_data;
 
-	/* Get an unique CFP id - this should be locked to prevent access from multiple tasks */
+	/* Get an unique CFP id */
 	const uint32_t ident = ifdata->cfp_packet_counter++;
 
 	/* Figure out destination node based on routing entry */
@@ -364,7 +369,7 @@ static int csp_can2_rx(csp_iface_t * iface, uint32_t id, const uint8_t * data, u
 	return CSP_ERR_NONE;
 }
 
-static int csp_can2_tx(csp_iface_t * iface, uint16_t via, csp_packet_t * packet, int from_me) {
+static int csp_can2_tx_frames(csp_iface_t * iface, uint16_t via, csp_packet_t * packet, int from_me) {
 	/* Avoid compiler warnings about unused parameter */
 	(void)via;
 	(void)from_me;
@@ -461,7 +466,34 @@ static int csp_can2_tx(csp_iface_t * iface, uint16_t via, csp_packet_t * packet,
 	return CSP_ERR_NONE;
 }
 
+static void tx_lock_take(void) {
+	/* A wait without timeout only fails when a signal interrupts it */
+	while (csp_bin_sem_wait(&tx_lock, CSP_MAX_TIMEOUT) != CSP_SEMAPHORE_OK) {
+	}
+}
+
+static int csp_can1_tx(csp_iface_t * iface, uint16_t via, csp_packet_t * packet, int from_me) {
+	tx_lock_take();
+	int ret = csp_can1_tx_frames(iface, via, packet, from_me);
+	csp_bin_sem_post(&tx_lock);
+	return ret;
+}
+
+static int csp_can2_tx(csp_iface_t * iface, uint16_t via, csp_packet_t * packet, int from_me) {
+	tx_lock_take();
+	int ret = csp_can2_tx_frames(iface, via, packet, from_me);
+	csp_bin_sem_post(&tx_lock);
+	return ret;
+}
+
 int csp_can_add_interface(csp_iface_t * iface) {
+
+	/* Interfaces are added before anything sends on them */
+	static bool tx_lock_ready = false;
+	if (!tx_lock_ready) {
+		csp_bin_sem_init(&tx_lock);
+		tx_lock_ready = true;
+	}
 
 	if ((iface == NULL) || (iface->name == NULL) || (iface->interface_data == NULL)) {
 		return CSP_ERR_INVAL;
